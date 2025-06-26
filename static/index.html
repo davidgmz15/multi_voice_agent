@@ -6,9 +6,78 @@
     <title>Deepgram Voice Agent</title>
 </head>
 <body>
-    <h1>Deepgram Voice Agent Browser Demo</h1>
-    <p>This is a demo of the Deepgram Voice Agent. It uses the <a href="https://developers.deepgram.com/reference/voice-agent-api/agent">Deepgram Voice Agent API</a>.</p>
-    <p>Please enable your microphone in the browser to start the conversation.</p>
+    <h1>Deepgram Multi-Voice Agent Demo</h1>
+    <p>This demo showcases multiple AI personalities using the <a href="https://developers.deepgram.com/reference/voice-agent-api/agent">Deepgram Voice Agent API</a>.</p>
+    
+    <!-- Tab Navigation -->
+    <div style="margin: 20px 0; border-bottom: 2px solid #ddd;">
+        <button id="agents-tab" class="tab-button active" onclick="showTab('agents')" style="padding: 10px 20px; margin-right: 5px; background: #4CAF50; color: white; border: none; border-radius: 5px 5px 0 0; cursor: pointer;">Agents</button>
+        <button id="microphone-tab" class="tab-button" onclick="showTab('microphone')" style="padding: 10px 20px; background: #f0f0f0; color: #333; border: none; border-radius: 5px 5px 0 0; cursor: pointer;">Microphone</button>
+    </div>
+
+    <!-- Agents Tab Content -->
+    <div id="agents-content" class="tab-content">
+        <div id="connection-controls" style="margin: 20px 0; padding: 15px; background-color: #f9f9f9; border-radius: 8px; text-align: center;">
+            <div id="ready-state" style="margin-bottom: 15px;">
+                <button id="start-agent" onclick="startAgent()" style="padding: 12px 24px; background: #4CAF50; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold;">Start Voice Agent</button>
+            </div>
+            <div id="connected-state" style="display: none;">
+                <h3 style="margin: 0 0 10px 0; color: #333;">Live</h3>
+                <p style="margin: 0 0 15px 0; color: #666;">Voice agent is active and listening...</p>
+                <button id="stop-agent" onclick="stopAgent()" style="padding: 8px 16px; background: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer;">Stop Agent</button>
+            </div>
+        </div>
+        
+        <div id="agent-status" style="margin: 20px 0; padding: 15px; background-color: #f0f8ff; border-radius: 8px; border-left: 4px solid #4CAF50;">
+            <h3 style="margin: 0 0 10px 0; color: #333;">Active Agent: <span id="current-agent">Alex (Agent 1)</span></h3>
+            <p style="margin: 0; color: #666;">Say "Agent [number]" to change agents</p>
+        </div>
+    </div>
+
+    <!-- Microphone Tab Content -->
+    <div id="microphone-content" class="tab-content" style="display: none;">
+        <div style="margin: 20px 0; padding: 15px; background-color: #f9f9f9; border-radius: 8px;">
+            <h3 style="margin: 0 0 15px 0; color: #333;">Microphone Settings</h3>
+            <div style="margin-bottom: 15px;">
+                <label for="microphone-select" style="display: block; margin-bottom: 8px; font-weight: bold; color: #555;">Select Microphone:</label>
+                <select id="microphone-select" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                    <option value="">Loading microphones...</option>
+                </select>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 8px; font-weight: bold; color: #555;">Connection Status:</label>
+                <span id="mic-status" style="color: #666;">Not connected</span>
+            </div>
+            <button id="test-microphone" onclick="testMicrophone()" style="padding: 8px 16px; background: #666; color: white; border: none; border-radius: 4px; cursor: pointer;">Test Microphone</button>
+            <button id="refresh-microphones" onclick="refreshMicrophones()" style="padding: 8px 16px; background: #666; color: white; border: none; border-radius: 4px; cursor: pointer; margin-left: 10px;">Refresh List</button>
+        </div>
+    </div>
+
+    <div id="available-agents" style="margin: 20px 0; padding: 15px; background-color: #f9f9f9; border-radius: 8px;">
+        <h4 style="margin: 0 0 10px 0; color: #333;">Available Agents:</h4>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin: 0;">
+            <div style="padding: 10px; background-color: #e8f5e8; border-radius: 5px; border: 2px solid #666;">
+                <strong style="color: #333;">Agent 1 - Alex</strong><br>
+            </div>
+            <div style="padding: 10px; background-color: #e3f2fd; border-radius: 5px; border: 2px solid #666;">
+                <strong style="color: #333;">Agent 2 - Ryan</strong><br>
+            </div>
+            <div style="padding: 10px; background-color: #fce4ec; border-radius: 5px; border: 2px solid #666;">
+                <strong style="color: #333;">Agent 3 - Sara</strong><br>
+            </div>
+            <div style="padding: 10px; background-color: #fff3e0; border-radius: 5px; border: 2px solid #666;">
+                <strong style="color: #333;">Agent 4 - Max</strong><br>
+            </div>
+        </div>
+    </div>
+
+    <p><strong>Voice Commands:</strong> Enable your microphone and try saying:</p>
+    <ul style="margin-left: 20px; color: #666;">
+        <li><strong>"Switch to Agent 1"</strong> - Alex (friendly)</li>
+        <li><strong>"Switch to Agent 2"</strong> - Ryan (professional)</li>
+        <li><strong>"Switch to Agent 3"</strong> - Sara (creative)</li>
+        <li><strong>"Switch to Agent 4"</strong> - Max (tech-savvy)</li>
+    </ul>
     <script>
         let socket;
         let mediaStream;
@@ -17,11 +86,243 @@
         let isConnected = false;
         let audioQueue = []; // Queue for managing incoming audio chunks
         let isPlaying = false; // Flag to track if we're currently playing audio
+        let audioBuffer = []; // Buffer to accumulate audio data for smoother playback
+        let nextPlayTime = 0; // Scheduled time for next audio chunk
+        let isBuffering = true; // Flag to control initial buffering
+        let audioWorkletNode = null; // Audio worklet for smooth playback
+        let continuousBuffer = new Float32Array(0); // Continuous audio buffer
+        let bufferWritePosition = 0;
+        let bufferReadPosition = 0;
+        let isAudioInitialized = false;
         let selectedDeviceId;
+        let availableDevices = [];
+        let currentAgent = 'alex'; // Track current agent for audio adjustments
+
+        // Tab management functions
+        function showTab(tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.style.display = 'none';
+            });
+            
+            // Remove active class from all tabs
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.classList.remove('active');
+                button.style.background = '#f0f0f0';
+                button.style.color = '#333';
+            });
+            
+            // Show selected tab content
+            document.getElementById(tabName + '-content').style.display = 'block';
+            
+            // Activate selected tab button
+            const activeTab = document.getElementById(tabName + '-tab');
+            activeTab.classList.add('active');
+            activeTab.style.background = '#4CAF50';
+            activeTab.style.color = 'white';
+        }
+
+        // Microphone management functions
+        async function getMicrophones() {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                availableDevices = devices.filter(device => device.kind === 'audioinput');
+                return availableDevices;
+            } catch (error) {
+                console.error('Error getting microphones:', error);
+                return [];
+            }
+        }
+
+        async function populateMicrophoneList() {
+            const select = document.getElementById('microphone-select');
+            const microphones = await getMicrophones();
+            
+            select.innerHTML = '';
+            
+            if (microphones.length === 0) {
+                select.innerHTML = '<option value="">No microphones found</option>';
+                return;
+            }
+            
+            // Add default option
+            select.innerHTML = '<option value="">Default microphone</option>';
+            
+            // Add each microphone
+            microphones.forEach((device, index) => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                option.textContent = device.label || `Microphone ${index + 1}`;
+                select.appendChild(option);
+            });
+            
+            // Set currently selected device
+            if (selectedDeviceId) {
+                select.value = selectedDeviceId;
+            }
+        }
+
+        async function changeMicrophone() {
+            const select = document.getElementById('microphone-select');
+            const newDeviceId = select.value;
+            
+            if (newDeviceId === selectedDeviceId) {
+                return; // No change needed
+            }
+            
+            selectedDeviceId = newDeviceId;
+            console.log('Switching to microphone:', selectedDeviceId || 'default');
+            
+            // Update status
+            updateMicrophoneStatus('Switching microphone...');
+            
+            // If we're connected, restart the stream with new microphone
+            if (isConnected) {
+                await restartWithNewMicrophone();
+            }
+        }
+
+        async function restartWithNewMicrophone() {
+            try {
+                // Stop current stream and reset audio buffers
+                stopStreaming();
+                stopContinuousPlayback();
+                
+                // Get new media stream with selected microphone
+                const constraints = {
+                    audio: {
+                        deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
+                        channelCount: 1,
+                        sampleRate: 24000,
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false,
+                        latency: 0,
+                        googEchoCancellation: false,
+                        googAutoGainControl: false,
+                        googNoiseSuppression: false,
+                        googHighpassFilter: true
+                    }
+                };
+                
+                mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+                
+                // Restart streaming with new microphone
+                startStreaming();
+                
+                updateMicrophoneStatus('Connected');
+                
+                const deviceName = selectedDeviceId ? 
+                    (availableDevices.find(d => d.deviceId === selectedDeviceId)?.label || 'Selected microphone') :
+                    'Default microphone';
+                console.log('Successfully switched to:', deviceName);
+                
+            } catch (error) {
+                console.error('Error switching microphone:', error);
+                updateMicrophoneStatus('Error switching microphone');
+            }
+        }
+
+        function updateMicrophoneStatus(status) {
+            const statusElement = document.getElementById('mic-status');
+            statusElement.textContent = status;
+            
+            // Update color based on status
+            if (status.includes('Connected')) {
+                statusElement.style.color = '#4CAF50';
+            } else if (status.includes('Error')) {
+                statusElement.style.color = '#f44336';
+            } else {
+                statusElement.style.color = '#ff9800';
+            }
+        }
+
+        async function testMicrophone() {
+            try {
+                const constraints = {
+                    audio: {
+                        deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
+                        channelCount: 1,
+                        sampleRate: 24000
+                    }
+                };
+                
+                const testStream = await navigator.mediaDevices.getUserMedia(constraints);
+                
+                // Create a simple volume meter for testing
+                const audioContext = new AudioContext();
+                const analyser = audioContext.createAnalyser();
+                const microphone = audioContext.createMediaStreamSource(testStream);
+                
+                microphone.connect(analyser);
+                analyser.fftSize = 256;
+                
+                const bufferLength = analyser.frequencyBinCount;
+                const dataArray = new Uint8Array(bufferLength);
+                
+                let testDuration = 3000; // 3 seconds
+                const startTime = Date.now();
+                
+                updateMicrophoneStatus('Testing microphone... Speak now!');
+                
+                function checkVolume() {
+                    const elapsed = Date.now() - startTime;
+                    
+                    if (elapsed < testDuration) {
+                        analyser.getByteFrequencyData(dataArray);
+                        const average = dataArray.reduce((a, b) => a + b) / bufferLength;
+                        
+                        if (average > 10) {
+                            updateMicrophoneStatus('Microphone working! Audio detected.');
+                            testDuration = 1000; // Finish test early if audio detected
+                        }
+                        
+                        setTimeout(checkVolume, 100);
+                    } else {
+                        // Clean up test
+                        testStream.getTracks().forEach(track => track.stop());
+                        audioContext.close();
+                        
+                        if (document.getElementById('mic-status').textContent.includes('Testing')) {
+                            updateMicrophoneStatus('Test complete - no audio detected');
+                        }
+                    }
+                }
+                
+                checkVolume();
+                
+            } catch (error) {
+                console.error('Error testing microphone:', error);
+                updateMicrophoneStatus('Error: Cannot access microphone');
+            }
+        }
+
+        async function refreshMicrophones() {
+            updateMicrophoneStatus('Refreshing microphone list...');
+            await populateMicrophoneList();
+            updateMicrophoneStatus(isConnected ? 'Connected' : 'Not connected');
+        }
 
         async function init() {
             try {
-                // Create audio context early
+                // Populate microphone list first
+                await populateMicrophoneList();
+                
+                // Set up microphone select event listener
+                document.getElementById('microphone-select').addEventListener('change', changeMicrophone);
+                
+                // Update microphone status
+                updateMicrophoneStatus('Ready to start');
+                
+            } catch (error) {
+                console.error('Error initializing:', error);
+                updateMicrophoneStatus('Initialization error');
+            }
+        }
+
+        async function startAgent() {
+            try {
+                // Create audio context
                 audioContext = new AudioContext({
                     sampleRate: 24000 // Match the highest sample rate we'll use
                 });
@@ -43,13 +344,19 @@
                         googHighpassFilter: true
                     }
                 };
+                
+                updateMicrophoneStatus('Requesting microphone access...');
                 mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+                
+                updateMicrophoneStatus('Connecting to voice agent...');
 
                 // Connect to WebSocket server
                 socket = new WebSocket('ws://localhost:3000');
 
                 socket.onopen = () => {
                     isConnected = true;
+                    updateMicrophoneStatus('Connected');
+                    updateConnectionState(true);
                     startStreaming();
                 };
 
@@ -58,13 +365,28 @@
                         try {
                             const arrayBuffer = await event.data.arrayBuffer();
                             const audioData = new Int16Array(arrayBuffer);
-                            // Add to queue instead of playing immediately
-                            audioQueue.push(audioData);
+                            
+                            // Convert to float and add to continuous buffer
+                            addToAudioBuffer(audioData);
+                            
+                            // Start playback if not already playing
                             if (!isPlaying) {
-                                playNextInQueue();
+                                startContinuousPlayback();
                             }
                         } catch (error) {
                             console.error('Error processing audio response:', error);
+                        }
+                    } else if (typeof event.data === 'string') {
+                        try {
+                            // Handle text messages (might be agent switch notifications)
+                            const message = JSON.parse(event.data);
+                            if (message.type === 'agent_switch') {
+                                console.log('Agent switch detected, resetting audio system');
+                                resetAudioSystem();
+                                updateCurrentAgentDisplay(message.agent);
+                            }
+                        } catch (error) {
+                            // Ignore non-JSON text messages
                         }
                     }
                 };
@@ -72,14 +394,40 @@
                 socket.onerror = (error) => {
                     console.error('WebSocket error:', error);
                     isConnected = false;
+                    updateMicrophoneStatus('Connection error');
                 };
 
                 socket.onclose = () => {
                     isConnected = false;
+                    updateMicrophoneStatus('Disconnected');
+                    updateConnectionState(false);
                     stopStreaming();
                 };
             } catch (error) {
-                console.error('Error initializing:', error);
+                console.error('Error starting agent:', error);
+                updateMicrophoneStatus('Error: ' + error.message);
+            }
+        }
+
+        function stopAgent() {
+            if (socket) {
+                socket.close();
+            }
+            stopStreaming();
+            updateConnectionState(false);
+            updateMicrophoneStatus('Stopped');
+        }
+
+        function updateConnectionState(connected) {
+            const readyState = document.getElementById('ready-state');
+            const connectedState = document.getElementById('connected-state');
+            
+            if (connected) {
+                readyState.style.display = 'none';
+                connectedState.style.display = 'block';
+            } else {
+                readyState.style.display = 'block';
+                connectedState.style.display = 'none';
             }
         }
 
@@ -145,60 +493,196 @@
             return pcmData;
         }
 
-        async function playNextInQueue() {
-            if (audioQueue.length === 0) {
-                isPlaying = false;
-                return;
+        function addToAudioBuffer(int16Data) {
+            // Skip if no data or system is being reset
+            if (!int16Data || int16Data.length === 0) return;
+            
+            // Convert Int16 to Float32
+            const floatData = new Float32Array(int16Data.length);
+            for (let i = 0; i < int16Data.length; i++) {
+                floatData[i] = int16Data[i] / (int16Data[i] >= 0 ? 0x7FFF : 0x8000);
             }
 
-            isPlaying = true;
-            const audioData = audioQueue.shift();
+            // Initialize buffer if needed (after reset)
+            if (!continuousBuffer || continuousBuffer.length === 0) {
+                continuousBuffer = new Float32Array(96000); // 4 seconds at 24kHz
+                bufferWritePosition = 0;
+                bufferReadPosition = 0;
+            }
 
+            // Expand continuous buffer if needed
+            const requiredSize = bufferWritePosition + floatData.length;
+            if (continuousBuffer.length < requiredSize) {
+                const newBuffer = new Float32Array(Math.max(requiredSize, continuousBuffer.length * 2));
+                newBuffer.set(continuousBuffer);
+                continuousBuffer = newBuffer;
+            }
+
+            // Add new audio data to buffer
+            continuousBuffer.set(floatData, bufferWritePosition);
+            bufferWritePosition += floatData.length;
+            
+            // Mark that we're no longer in initial buffering state
+            if (isBuffering && bufferWritePosition > 4800) { // 200ms of audio
+                isBuffering = false;
+            }
+        }
+
+        async function startContinuousPlayback() {
+            if (isPlaying) return;
+            
             try {
                 // Ensure audio context is running
                 if (audioContext.state === 'suspended') {
                     await audioContext.resume();
                 }
 
-                // Create buffer with correct sample rate for agent's audio (24000Hz)
-                const buffer = audioContext.createBuffer(1, audioData.length, 24000);
-                const channelData = buffer.getChannelData(0);
+                isPlaying = true;
+                playAudioChunk();
+                
+            } catch (error) {
+                console.error('Error starting continuous playback:', error);
+                isPlaying = false;
+            }
+        }
 
-                // Convert Int16 to Float32 with proper scaling
-                for (let i = 0; i < audioData.length; i++) {
-                    // Normalize to [-1, 1] range
-                    channelData[i] = audioData[i] / (audioData[i] >= 0 ? 0x7FFF : 0x8000);
+        function playAudioChunk() {
+            if (!isPlaying) return;
+
+            const availableData = bufferWritePosition - bufferReadPosition;
+            
+            // Agent-specific buffer requirements
+            const minBufferSize = currentAgent === 'max' ? 4800 : 2048; // More buffer for Agent 4
+            
+            // If we don't have enough data, wait and try again
+            if (availableData < minBufferSize) {
+                // But don't wait too long if we're buffering
+                const waitTime = isBuffering ? 50 : 20;
+                setTimeout(playAudioChunk, waitTime);
+                return;
+            }
+
+            try {
+                // Calculate chunk size - larger chunks for Agent 4
+                const baseChunkSize = currentAgent === 'max' ? 4800 : 2400; // 200ms vs 100ms
+                const chunkSize = Math.min(baseChunkSize, availableData);
+                
+                // Create audio buffer
+                const audioBuffer = audioContext.createBuffer(1, chunkSize, 24000);
+                const channelData = audioBuffer.getChannelData(0);
+                
+                // Copy data with crossfading at boundaries
+                for (let i = 0; i < chunkSize; i++) {
+                    let sample = continuousBuffer[bufferReadPosition + i];
+                    
+                    // Apply crossfading at the beginning and end of chunks
+                    const fadeLength = Math.min(64, chunkSize / 4); // 64 samples fade
+                    if (i < fadeLength) {
+                        // Fade in
+                        sample *= i / fadeLength;
+                    } else if (i >= chunkSize - fadeLength) {
+                        // Fade out
+                        sample *= (chunkSize - i) / fadeLength;
+                    }
+                    
+                    channelData[i] = sample;
                 }
-
-                // Create and configure source
+                
+                // Create and schedule source
                 const source = audioContext.createBufferSource();
-                source.buffer = buffer;
-
-                // Create a gain node for volume control
+                source.buffer = audioBuffer;
+                
+                // Create gain node for smooth volume control
                 const gainNode = audioContext.createGain();
-                gainNode.gain.value = 1.0; // Adjust volume if needed
-
-                // Connect nodes
+                gainNode.gain.value = 0.8; // Slightly lower volume to prevent clipping
+                
                 source.connect(gainNode);
                 gainNode.connect(audioContext.destination);
-
-                // Handle playback completion
-                source.onended = () => {
-                    playNextInQueue(); // Play next chunk when current one ends
-                };
-
-                // Start playback
-                source.start(0);
+                
+                // Schedule with precise timing
+                const currentTime = audioContext.currentTime;
+                if (nextPlayTime <= currentTime) {
+                    nextPlayTime = currentTime + 0.01; // Small offset to prevent immediate scheduling issues
+                }
+                
+                source.start(nextPlayTime);
+                
+                // Agent-specific overlap settings
+                const overlapRatio = currentAgent === 'max' ? 0.9 : 0.8; // More overlap for Agent 4
+                nextPlayTime += audioBuffer.duration * overlapRatio;
+                
+                // Update read position (with overlap)
+                bufferReadPosition += Math.floor(chunkSize * overlapRatio);
+                
+                // Clean up old data periodically
+                if (bufferReadPosition > 48000) { // Clean up after 2 seconds of audio
+                    const remainingData = bufferWritePosition - bufferReadPosition;
+                    const newBuffer = new Float32Array(Math.max(remainingData * 2, 96000));
+                    newBuffer.set(continuousBuffer.subarray(bufferReadPosition, bufferWritePosition));
+                    continuousBuffer = newBuffer;
+                    bufferWritePosition = remainingData;
+                    bufferReadPosition = 0;
+                }
+                
+                // Schedule next chunk
+                setTimeout(playAudioChunk, 50); // 50ms between scheduling
+                
             } catch (error) {
-                console.error('Error playing audio:', error);
-                isPlaying = false;
-                playNextInQueue(); // Try next chunk if current fails
+                console.error('Error in playAudioChunk:', error);
+                setTimeout(playAudioChunk, 100);
+            }
+        }
+
+        function stopContinuousPlayback() {
+            isPlaying = false;
+            nextPlayTime = 0;
+            bufferReadPosition = 0;
+            bufferWritePosition = 0;
+            continuousBuffer = new Float32Array(0);
+        }
+
+        function resetAudioSystem() {
+            console.log('Resetting audio system for agent switch...');
+            
+            // Stop current playback
+            stopContinuousPlayback();
+            
+            // Clear all buffers
+            audioQueue = [];
+            audioBuffer = [];
+            
+            // Reset buffer state
+            continuousBuffer = new Float32Array(0);
+            bufferWritePosition = 0;
+            bufferReadPosition = 0;
+            isPlaying = false;
+            isBuffering = true;
+            nextPlayTime = 0;
+            
+            console.log('Audio system reset complete');
+        }
+
+        function updateCurrentAgentDisplay(agentName) {
+            const currentAgentSpan = document.getElementById('current-agent');
+            const agentNames = {
+                'alex': 'Alex (Agent 1)',
+                'ryan': 'Ryan (Agent 2)', 
+                'sara': 'Sara (Agent 3)',
+                'max': 'Max (Agent 4)'
+            };
+            
+            if (currentAgentSpan && agentNames[agentName]) {
+                currentAgentSpan.textContent = agentNames[agentName];
+                currentAgent = agentName; // Update current agent tracker
+                console.log('Updated display to:', agentNames[agentName]);
             }
         }
 
         function stopStreaming() {
             audioQueue = []; // Clear audio queue
-            isPlaying = false;
+            audioBuffer = []; // Clear audio buffer
+            stopContinuousPlayback(); // Stop continuous audio playback
+            
             if (processor) {
                 processor.disconnect();
                 processor = null;
@@ -212,6 +696,7 @@
                 mediaStream = null;
             }
             isConnected = false;
+            updateMicrophoneStatus('Not connected');
         }
 
         function initializeVolumeMeter(analyser) {
@@ -229,10 +714,7 @@
             updateMeter();
         }
 
-        async function getAudioDevices() {
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            return devices.filter(device => device.kind === 'audioinput');
-        }
+
 
         // Initialize when the page loads
         window.onload = init;

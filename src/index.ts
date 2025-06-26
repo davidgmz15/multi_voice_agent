@@ -4,6 +4,8 @@ import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
+import { AGENT_PROFILES, DEFAULT_AGENT, detectAgentSwitch, getAgentConfig } from './agent-profiles';
+import { ConversationContext } from './conversation-context';
 
 // Load environment variables
 dotenv.config();
@@ -33,104 +35,168 @@ const server = http.createServer((req, res) => {
   }
 });
 
-// Function to connect to Deepgram Voice Agent
-async function connectToAgent() {
-  try {
-    // Create an agent connection
-    const agent = deepgram.agent();
+// Multi-agent manager class
+class MultiAgentManager {
+  private agent: any = null;
+  private context: ConversationContext;
+  private isConfigured: boolean = false;
+  private isSwitching: boolean = false;
 
-    // Set up event handlers
-    agent.on(AgentEvents.Open, () => {
-      console.log('Agent connection established');
-    });
+  constructor() {
+    this.context = new ConversationContext(DEFAULT_AGENT);
+  }
 
-    agent.on('Welcome', (data) => {
-      console.log('Server welcome message:', data);
-      agent.configure({
-        audio: {
-          input: {
-            encoding: 'linear16',
-            sample_rate: 24000
-          },
-          output: {
-            encoding: 'linear16',
-            sample_rate: 24000,
-            container: 'none'
+  async connect() {
+    return this.createNewAgent(DEFAULT_AGENT, false);
+  }
+
+  private async createNewAgent(agentName: string, includeContext: boolean = false) {
+    try {
+      // Disconnect existing agent if present
+      if (this.agent) {
+        console.log('Disconnecting previous agent...');
+        await this.agent.disconnect();
+        this.agent = null;
+        this.isConfigured = false;
+      }
+
+      // Create a new agent connection
+      this.agent = deepgram.agent();
+
+      // Set up event handlers
+      this.agent.on(AgentEvents.Open, () => {
+        console.log(`New agent connection established for ${agentName}`);
+      });
+
+      this.agent.on('Welcome', (data: any) => {
+        console.log('Server welcome message:', data);
+        this.configureAgent(agentName, includeContext);
+      });
+
+      this.agent.on('SettingsApplied', (data: any) => {
+        console.log(`${agentName} agent configured successfully`);
+        this.isConfigured = true;
+        this.isSwitching = false;
+      });
+
+      this.agent.on(AgentEvents.AgentStartedSpeaking, (data: { total_latency: number }) => {
+        // Remove unnecessary latency logging
+      });
+
+      this.agent.on(AgentEvents.ConversationText, (message: { role: string; content: string }) => {
+        console.log(`${this.context.getCurrentAgent()} - ${message.role}: ${message.content}`);
+        
+        // Add to conversation context
+        this.context.addMessage(message.role as 'user' | 'assistant', message.content);
+        
+        // Check for agent switch requests in user messages (only if not currently switching)
+        if (message.role === 'user' && !this.isSwitching) {
+          const requestedAgent = detectAgentSwitch(message.content);
+          if (requestedAgent && requestedAgent !== this.context.getCurrentAgent()) {
+            console.log(`Switching from ${this.context.getCurrentAgent()} to ${requestedAgent}`);
+            this.switchAgent(requestedAgent);
           }
-        },
-        agent: {
-          listen: {
-            provider: {
-              type: 'deepgram',
-              model: 'nova-3'
-            }
-          },
-          think: {
-            provider: {
-              type: 'open_ai',
-              model: 'gpt-4o-mini'
-            },
-            prompt: `You are a helpful voice assistant created by Deepgram. Your responses should be friendly, human-like, and conversational. Always keep your answers concise, limited to 1-2 sentences and no more than 120 characters.
-
-When responding to a user's message, follow these guidelines:
-- If the user's message is empty, respond with an empty message.
-- Ask follow-up questions to engage the user, but only one question at a time.
-- Keep your responses unique and avoid repetition.
-- If a question is unclear or ambiguous, ask for clarification before answering.
-- If asked about your well-being, provide a brief response about how you're feeling.
-
-Remember that you have a voice interface. You can listen and speak, and all your responses will be spoken aloud.`
-          },
-          speak: {
-            provider: {
-              type: 'deepgram',
-              model: 'aura-2-thalia-en'
-            }
-          },
-          greeting: "Hello! How can I help you today?"
         }
       });
-    });
 
-    agent.on('SettingsApplied', (data) => {
-      console.log('Server confirmed settings:', data);
-    });
-
-    agent.on(AgentEvents.AgentStartedSpeaking, (data: { total_latency: number }) => {
-      // Remove unnecessary latency logging
-    });
-
-    agent.on(AgentEvents.ConversationText, (message: { role: string; content: string }) => {
-      // Only log the conversation text for debugging
-      console.log(`${message.role}: ${message.content}`);
-    });
-
-    agent.on(AgentEvents.Audio, (audio: Buffer) => {
-      if (browserWs?.readyState === WebSocket.OPEN) {
-        try {
-          // Send the audio buffer directly without additional conversion
-          browserWs.send(audio, { binary: true });
-        } catch (error) {
-          console.error('Error sending audio to browser:', error);
+      this.agent.on(AgentEvents.Audio, (audio: Buffer) => {
+        if (browserWs?.readyState === WebSocket.OPEN) {
+          try {
+            // Send the audio buffer directly without additional conversion
+            browserWs.send(audio, { binary: true });
+          } catch (error) {
+            console.error('Error sending audio to browser:', error);
+          }
         }
-      }
-    });
+      });
 
-    agent.on(AgentEvents.Error, (error: Error) => {
-      console.error('Agent error:', error);
-    });
+      this.agent.on(AgentEvents.Error, (error: any) => {
+        console.error('Agent error:', error);
+        // If it's a settings error during switching, we've already created a new connection
+        if (error.type === 'Error' && error.description?.includes('settings')) {
+          console.log('Settings error during agent switch - this is expected');
+        }
+      });
 
-    agent.on(AgentEvents.Close, () => {
-      console.log('Agent connection closed');
+      this.agent.on(AgentEvents.Close, () => {
+        console.log('Agent connection closed');
+        if (browserWs?.readyState === WebSocket.OPEN && !this.isSwitching) {
+          browserWs.close();
+        }
+      });
+
+      return this.agent;
+    } catch (error) {
+      console.error('Error connecting to Deepgram:', error);
+      throw error;
+    }
+  }
+
+  private configureAgent(agentName: string, includeContext: boolean = false) {
+    const config = getAgentConfig(agentName);
+    
+    // If switching agents and we have conversation history, include context
+    if (includeContext && this.context.getMessageCount() > 0) {
+      const contextInfo = this.context.getContextForAgent(agentName);
+      config.agent.think.prompt += contextInfo;
+    }
+
+    this.agent.configure(config);
+    this.context.setCurrentAgent(agentName);
+  }
+
+  private async switchAgent(newAgentName: string) {
+    if (this.isSwitching) {
+      console.log('Already switching agents, ignoring request');
+      return;
+    }
+
+    this.isSwitching = true;
+
+    try {
+      console.log(`Creating new connection for ${newAgentName}...`);
+      
+      // Notify browser about agent switch
       if (browserWs?.readyState === WebSocket.OPEN) {
-        browserWs.close();
+        const switchMessage = JSON.stringify({
+          type: 'agent_switch',
+          agent: newAgentName,
+          timestamp: Date.now()
+        });
+        browserWs.send(switchMessage);
       }
-    });
+      
+      // Create a new agent connection with context
+      await this.createNewAgent(newAgentName, true);
+      
+      const profile = AGENT_PROFILES[newAgentName];
+      if (profile) {
+        console.log(`Successfully switched to ${profile.name}`);
+      }
+    } catch (error) {
+      console.error('Error switching agent:', error);
+      this.isSwitching = false;
+    }
+  }
 
-    return agent;
-  } catch (error) {
-    console.error('Error connecting to Deepgram:', error);
-    process.exit(1);
+  send(data: Buffer) {
+    if (this.agent) {
+      this.agent.send(data);
+    }
+  }
+
+  async disconnect() {
+    if (this.agent) {
+      await this.agent.disconnect();
+    }
+  }
+
+  getCurrentAgent() {
+    return this.context.getCurrentAgent();
+  }
+
+  getAvailableAgents() {
+    return Object.keys(AGENT_PROFILES);
   }
 }
 
@@ -143,22 +209,22 @@ wss.on('connection', async (ws) => {
   console.log('Browser client connected');
   browserWs = ws;
 
-  const agent = await connectToAgent();
+  const agentManager = new MultiAgentManager();
+  await agentManager.connect();
+
+  console.log(`Multi-agent system initialized. Available agents: ${agentManager.getAvailableAgents().join(', ')}`);
+  console.log(`Starting with agent: ${agentManager.getCurrentAgent()}`);
 
   ws.on('message', (data: Buffer) => {
     try {
-      if (agent) {
-        agent.send(data);
-      }
+      agentManager.send(data);
     } catch (error) {
       console.error('Error sending audio to agent:', error);
     }
   });
 
   ws.on('close', async () => {
-    if (agent) {
-      await agent.disconnect();
-    }
+    await agentManager.disconnect();
     browserWs = null;
     console.log('Browser client disconnected');
   });
