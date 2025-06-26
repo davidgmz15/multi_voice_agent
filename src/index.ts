@@ -86,8 +86,9 @@ class MultiAgentManager {
       this.agent.on(AgentEvents.ConversationText, (message: { role: string; content: string }) => {
         console.log(`${this.context.getCurrentAgent()} - ${message.role}: ${message.content}`);
         
-        // Add to conversation context
-        this.context.addMessage(message.role as 'user' | 'assistant', message.content);
+        // Add to conversation context with current agent name for assistant messages
+        const agentName = message.role === 'assistant' ? this.context.getCurrentAgent() : undefined;
+        this.context.addMessage(message.role as 'user' | 'assistant', message.content, agentName);
         
         // Check for agent switch requests in user messages (only if not currently switching)
         if (message.role === 'user' && !this.isSwitching) {
@@ -139,10 +140,14 @@ class MultiAgentManager {
     if (includeContext && this.context.getMessageCount() > 0) {
       const contextInfo = this.context.getContextForAgent(agentName);
       config.agent.think.prompt += contextInfo;
+      console.log(`Added context to ${agentName}: ${contextInfo.substring(0, 200)}...`);
+    } else if (includeContext) {
+      console.log(`No context to include for ${agentName} (${this.context.getMessageCount()} messages)`);
     }
 
     this.agent.configure(config);
     this.context.setCurrentAgent(agentName);
+    console.log(`Current agent set to: ${agentName}`);
   }
 
   private async switchAgent(newAgentName: string) {
@@ -154,7 +159,10 @@ class MultiAgentManager {
     this.isSwitching = true;
 
     try {
-      console.log(`Creating new connection for ${newAgentName}...`);
+      console.log(`\n🔄 Switching from ${this.context.getCurrentAgent()} to ${newAgentName}...`);
+      
+      // Debug context before switch
+      this.context.debugContext();
       
       // Notify browser about agent switch
       if (browserWs?.readyState === WebSocket.OPEN) {
@@ -171,10 +179,11 @@ class MultiAgentManager {
       
       const profile = AGENT_PROFILES[newAgentName];
       if (profile) {
-        console.log(`Successfully switched to ${profile.name}`);
+        console.log(`✅ Successfully switched to ${profile.name}`);
+        console.log(`Context passed: ${this.context.getMessageCount()} messages`);
       }
     } catch (error) {
-      console.error('Error switching agent:', error);
+      console.error('❌ Error switching agent:', error);
       this.isSwitching = false;
     }
   }

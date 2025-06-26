@@ -43,16 +43,25 @@ export class ConversationContext {
       return '';
     }
 
+    // Get recent conversation history
+    const recentMessages = this.messages.slice(-15); // Last 15 messages for better context
+    
     // Create a context summary for the new agent
-    const contextMessages = this.messages
-      .slice(-10) // Last 10 messages for context
+    const contextMessages = recentMessages
       .map(msg => {
-        const speaker = msg.role === 'user' ? 'User' : (msg.agentName || 'Assistant');
+        const speaker = msg.role === 'user' ? 'User' : (msg.agentName || 'Previous Agent');
         return `${speaker}: ${msg.content}`;
       })
       .join('\n');
 
-    return `\n\nPrevious conversation context:\n${contextMessages}\n\nYou are now taking over the conversation. Acknowledge the context and continue naturally.`;
+    // Get the previous agent name for smoother transition
+    const lastAssistantMessage = recentMessages
+      .filter(msg => msg.role === 'assistant' && msg.agentName)
+      .pop();
+    
+    const previousAgent = lastAssistantMessage?.agentName || 'the previous agent';
+
+    return `\n\nPrevious conversation context (you are taking over from ${previousAgent}):\n${contextMessages}\n\nContinue the conversation naturally, acknowledging what has been discussed.`;
   }
 
   getRecentMessages(count: number = 5): ConversationMessage[] {
@@ -65,5 +74,17 @@ export class ConversationContext {
 
   getMessageCount(): number {
     return this.messages.length;
+  }
+
+  // Debug method to see current context state
+  debugContext(): void {
+    console.log(`\n=== Context Debug ===`);
+    console.log(`Current Agent: ${this.currentAgent}`);
+    console.log(`Total Messages: ${this.messages.length}`);
+    console.log(`Recent Messages:`);
+    this.messages.slice(-5).forEach((msg, index) => {
+      console.log(`  ${index + 1}. ${msg.role} (${msg.agentName || 'unknown'}): ${msg.content.substring(0, 50)}...`);
+    });
+    console.log(`==================\n`);
   }
 } 
